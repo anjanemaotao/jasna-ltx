@@ -28,5 +28,5 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add data/movies.json
+          git add data/movies.json index.html
           git diff --quiet && git diff --staged --quiet || (git commit -m "chore(sync): 自动同步最新 LTX 资源 [skip ci]" && git push)

@@ -2,14 +2,15 @@
  * Jasna-LTX 全自动数据同步与更新脚本 (Node.js)
  * 功能：
  * 1. 定时巡检 Nyaa 上的 LTX 资源更新
- * 2. 提取番号并去重合并进 data.items (3,193+ 部作品)
- * 3. 自动更新时间戳并保存
+ * 2. 提取番号并去重合并进 data.items (3,194+ 部作品)
+ * 3. 自动更新 data/movies.json 及 index.html 内联数据
  */
 
 const fs = require('fs');
 const path = require('path');
 
 const DATA_FILE = path.join(__dirname, '..', 'data', 'movies.json');
+const INDEX_FILE = path.join(__dirname, '..', 'index.html');
 
 function extractCode(text) {
   const match = text.match(/([a-zA-Z]{2,6})[-_]?(\d{3,5})/i);
@@ -107,7 +108,23 @@ async function runSync() {
   if (data.items) data.items = itemList;
   else data.movies = itemList;
 
+  // 1. 写回 data/movies.json
+  const minifiedJson = JSON.stringify(data);
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
+
+  // 2. 同时更新 index.html 中的内联 <script id="ltx-items">
+  if (fs.existsSync(INDEX_FILE)) {
+    let indexHtml = fs.readFileSync(INDEX_FILE, 'utf8');
+    if (indexHtml.includes('id="ltx-items"')) {
+      indexHtml = indexHtml.replace(
+        /<script id="ltx-items" type="application\/json">[\s\S]*?<\/script>/,
+        `<script id="ltx-items" type="application/json">${minifiedJson}</script>`
+      );
+      fs.writeFileSync(INDEX_FILE, indexHtml, 'utf8');
+      console.log('[Sync] 同步更新 index.html 内联数据完成');
+    }
+  }
+
   console.log(`[Sync] 同步完成！本次新增: ${newAddedCount} 部，总计: ${itemList.length} 部`);
   console.log('==============================');
 }
