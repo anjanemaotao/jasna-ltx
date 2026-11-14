@@ -1,9 +1,9 @@
 /**
  * Jasna-LTX 全自动数据同步与更新脚本 (Node.js)
  * 功能：
- * 1. 定时巡检 Nyaa 上的 LTX 资源更新
- * 2. 提取番号并去重合并进 data.items (3,194+ 部作品)
- * 3. 严格字段契约：确保 pending_links, links, genres 均为数组，防止前端 TypeError 崩溃
+ * 1. 定时巡检 Sukebei 上的成人 LTX 破解资源发布流
+ * 2. 提取标准番号并去重合并进 data.items
+ * 3. 严格字段契约：确保 pending_links, links, genres 均为数组，防止前端崩溃
  * 4. 自动更新 data/movies.json 及 index.html 内联数据
  */
 
@@ -19,13 +19,13 @@ function extractCode(text) {
   return `${match[1].toUpperCase()}-${match[2]}`;
 }
 
-async function fetchNyaaLTX() {
-  console.log('[Sync] 正在检查 Nyaa LTX 最新种子发布...');
-  const url = 'https://nyaa.si/?page=rss&q=LTX&c=0_0&f=0';
+async function fetchSukebeiLTX() {
+  console.log('[Sync] 正在检查 Sukebei LTX 最新种子发布...');
+  const url = 'https://sukebei.nyaa.si/?page=rss&q=LTX&c=0_0&f=0';
   
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
+    const timeout = setTimeout(() => controller.abort(), 12000);
     const resp = await fetch(url, {
       signal: controller.signal,
       headers: {
@@ -34,24 +34,26 @@ async function fetchNyaaLTX() {
     });
     clearTimeout(timeout);
 
-    if (!resp.ok) throw new Error(`Nyaa HTTP ${resp.status}`);
+    if (!resp.ok) throw new Error(`Sukebei HTTP ${resp.status}`);
 
     const xml = await resp.text();
     const items = [];
     const itemRegex = /<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<link>(.*?)<\/link>[\s\S]*?<\/item>/g;
     let match;
     while ((match = itemRegex.exec(xml)) !== null) {
-      const rawTitle = match[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1');
-      const torrentLink = match[2];
+      const rawTitle = match[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').trim();
+      const torrentLink = match[2].trim();
       const code = extractCode(rawTitle);
-      if (code) {
+      
+      // 过滤非正规番号或动漫杂项
+      if (code && !code.startsWith('LTXS-')) {
         items.push({ rawTitle, torrentLink, code });
       }
     }
-    console.log(`[Sync] 抓取到 ${items.length} 个最新 Nyaa LTX 种子项`);
+    console.log(`[Sync] 抓取到 ${items.length} 个最新 Sukebei LTX 种子项`);
     return items;
   } catch (err) {
-    console.warn('[Sync] 请求 Nyaa 网络波动:', err.message);
+    console.warn('[Sync] 请求 Sukebei 网络波动:', err.message);
     return [];
   }
 }
@@ -65,23 +67,34 @@ async function runSync() {
   }
 
   const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-  const itemList = data.items || data.movies || [];
-  const existingCodes = new Set(itemList.map(m => (m.code || '').toUpperCase()));
+  let itemList = data.items || data.movies || [];
 
+  // 清洗历史脏数据 (如 LTXS-010)
+  itemList = itemList.filter(item => item.code !== 'LTXS-010');
+
+  const existingCodes = new Set(itemList.map(m => (m.code || '').toUpperCase()));
   console.log(`[Sync] 当前数据库中共有 ${itemList.length} 部作品`);
 
-  const nyaaItems = await fetchNyaaLTX();
+  const sukebeiItems = await fetchSukebeiLTX();
   let newAddedCount = 0;
 
-  for (const item of nyaaItems) {
+  for (const item of sukebeiItems) {
     if (existingCodes.has(item.code)) continue;
+
+    // 智能提取女优名与标题
+    let title = item.rawTitle.replace(/^\+\+\+\s*\[LTX\]\s*/i, '').replace(/^\[LTX[^\]]*\]\s*/i, '');
+    let actorName = 'LTX';
+    const parts = title.split(/\s+/);
+    if (parts.length > 2) {
+      actorName = parts[parts.length - 1];
+    }
 
     const codeClean = item.code.replace('-', '').toLowerCase();
     const newItem = {
       code: item.code,
-      title: item.rawTitle,
-      title_zh: item.rawTitle,
-      actors: ["LTX New"],
+      title: title,
+      title_zh: title,
+      actors: [actorName],
       maker: item.code.split('-')[0],
       date: new Date().toISOString().split('T')[0],
       added_at: Date.now(),
@@ -98,7 +111,7 @@ async function runSync() {
     itemList.unshift(newItem);
     existingCodes.add(item.code);
     newAddedCount++;
-    console.log(`[Sync] ✨ 成功入库新作品: ${item.code}`);
+    console.log(`[Sync] ✨ 成功入库新作品: ${item.code} (${actorName})`);
   }
 
   data.updated_at = Date.now();
