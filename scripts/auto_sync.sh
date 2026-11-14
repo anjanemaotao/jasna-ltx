@@ -7,7 +7,7 @@ LOG_FILE="$LOG_DIR/sync.log"
 mkdir -p "$LOG_DIR"
 
 echo "============================================================" >> "$LOG_FILE"
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] Jasna-LTX 官方原站同步任务启动" >> "$LOG_FILE"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Jasna-LTX 云端 Xvfb 官方原站同步任务启动" >> "$LOG_FILE"
 echo "============================================================" >> "$LOG_FILE"
 
 cd "$DIR"
@@ -16,9 +16,9 @@ cd "$DIR"
 echo "[Git] 正在拉取远端最新代码..." >> "$LOG_FILE"
 git pull origin main --rebase >> "$LOG_FILE" 2>&1 || echo "[Git] pull 提示: 当前已最新" >> "$LOG_FILE"
 
-# 2. 执行官方原站同步（铁律：遇到 403 / 拦截直接非 0 中断退出）
-echo "[Sync] 正在执行官方原站数据同步..." >> "$LOG_FILE"
-if ! node scripts/sync.js >> "$LOG_FILE" 2>&1; then
+# 2. 执行 Xvfb + Chromium 原生同步（铁律：遇到 403 / 拦截直接非 0 中断退出）
+echo "[Sync] 正在通过 xvfb-run 拉起真实 Chromium 执行官方同步..." >> "$LOG_FILE"
+if ! xvfb-run -a node scripts/sync_xvfb.js >> "$LOG_FILE" 2>&1; then
     echo "❌ [$(date '+%Y-%m-%d %H:%M:%S')] [Sync FAILED] 官方原站同步失败中断（触发铁律二报错）！" >> "$LOG_FILE"
     exit 1
 fi
