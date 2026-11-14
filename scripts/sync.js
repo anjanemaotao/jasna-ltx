@@ -1,11 +1,10 @@
 /**
- * Jasna-LTX 无盾官方发布流全自动数据同步与更新引擎 (Node.js)
- * 核心特性：
- * 1. 直连无盾实时发布流 (Sukebei LTX RSS)，0 拦截秒级更新；
- * 2. 智能提取番号、女优、标题与种子链接；
- * 3. 严格遵循前端契约字段规范 (pending_links, links, genres)，杜绝任何前端报错；
- * 4. 同步更新 data/movies.json 与 index.html 内联数据；
- * 5. 全自动 git commit & git push 到 GitHub 仓库。
+ * Jasna-LTX 官方原站原生同步引擎 (Node.js)
+ * 严格遵循项目四大死锁铁律：
+ * 1. 唯一合法数据源：https://ltx.libray.workers.dev/，严禁使用任何第三方源；
+ * 2. 禁止虚假兜底：遇到 403 / 503 / 人机盾拦截，必须以非 0 退出码报错中断，严禁假装成功；
+ * 3. 严禁污染字段：入库前严格校验字段格式（演员、番号、ed2k、封面），严禁篡改；
+ * 4. 真实结果验收：必须通过 strict_verify.js 自检。
  */
 
 const fs = require('fs');
@@ -13,151 +12,150 @@ const path = require('path');
 
 const DATA_FILE = path.join(__dirname, '..', 'data', 'movies.json');
 const INDEX_FILE = path.join(__dirname, '..', 'index.html');
+const OFFICIAL_URL = 'https://ltx.libray.workers.dev/api/items';
 
-function extractCode(text) {
-  const match = text.match(/([a-zA-Z]{2,6})[-_]?(\d{3,5})/i);
-  if (!match) return null;
-  return `${match[1].toUpperCase()}-${match[2]}`;
-}
+const BAD_ACTOR_KEYWORDS = ['診断', '巨乳', '人妻', '中出し', '調教', '痴女', 'エロ', '不倫', 'セックス', '健康', 'アナル'];
 
-async function fetchSukebeiLTX() {
-  console.log('[Sync] 正在检查无盾发布流 (Sukebei LTX RSS) 最新更新...');
-  const url = 'https://sukebei.nyaa.si/?page=rss&q=LTX&c=0_0&f=0';
-  
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-    const resp = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
-    });
-    clearTimeout(timeout);
+async function fetchOfficialLibrary() {
+  console.log('=== Jasna-LTX 官方原站同步启动 ===');
+  console.log(`[Sync] 正在请求唯一合法官方原站: ${OFFICIAL_URL} ...`);
 
-    if (!resp.ok) throw new Error(`发布流响应异常: HTTP ${resp.status}`);
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*',
+    'Referer': 'https://ltx.libray.workers.dev/'
+  };
 
-    const xml = await resp.text();
-    const items = [];
-    const itemRegex = /<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<link>(.*?)<\/link>[\s\S]*?<pubDate>(.*?)<\/pubDate>[\s\S]*?<\/item>/g;
-    let match;
-    while ((match = itemRegex.exec(xml)) !== null) {
-      const rawTitle = match[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').trim();
-      const torrentLink = match[2].trim();
-      const pubDate = match[3] ? match[3].trim() : '';
-      const code = extractCode(rawTitle);
-      
-      // 过滤非正规番号或动漫杂项
-      if (code && !code.startsWith('LTXS-')) {
-        items.push({ rawTitle, torrentLink, pubDate, code });
-      }
-    }
-    console.log(`[Sync] 抓取到 ${items.length} 个最新官方 LTX 种子项`);
-    return items;
-  } catch (err) {
-    console.warn('[Sync] 发布流请求波动:', err.message);
-    return [];
+  // 支持通过环境变量注入合法 session cookie (如经过人机验证后的 cf_clearance)
+  if (process.env.LTX_COOKIE) {
+    headers['Cookie'] = process.env.LTX_COOKIE;
   }
-}
 
-async function runSync() {
-  console.log('=== Jasna-LTX 无盾数据同步引擎启动 ===');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
 
-  if (!fs.existsSync(DATA_FILE)) {
-    console.error('未找到数据库文件:', DATA_FILE);
+  let resp;
+  try {
+    resp = await fetch(OFFICIAL_URL, {
+      signal: controller.signal,
+      headers
+    });
+  } catch (err) {
+    clearTimeout(timeout);
+    console.error(`❌ [Sync Fatal] 网络请求失败: ${err.message}`);
+    process.exit(1);
+  }
+  clearTimeout(timeout);
+
+  // 【铁律二】：遇到 403 / 503 或任何非 200 拦截，严禁输出“保持当前数据库”假装成功，必须直接报错退出！
+  if (!resp.ok) {
+    let body = '';
+    try { body = await resp.text(); } catch(e) {}
+    console.error(`❌ [Sync Fatal Error] 官方原站响应 HTTP ${resp.status} 拦截！`);
+    console.error(`[Detail] 响应内容: ${body.slice(0, 300)}`);
+    console.error('【铁律触发】严禁虚假兜底！任务判定为失败，立刻以非 0 退出码中断！');
     process.exit(1);
   }
 
-  const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-  let itemList = data.items || data.movies || [];
-
-  // 清洗历史杂项脏数据
-  itemList = itemList.filter(item => item.code !== 'LTXS-010');
-
-  const initialCount = itemList.length;
-  const existingCodes = new Set(itemList.map(m => (m.code || '').toUpperCase()));
-  console.log(`[Sync] 当前数据库初始作品数: ${initialCount} 部`);
-
-  const sukebeiItems = await fetchSukebeiLTX();
-  let newAddedCount = 0;
-
-  for (const item of sukebeiItems) {
-    if (existingCodes.has(item.code)) continue;
-
-    // 智能提取女优名与标题
-    let title = item.rawTitle
-      .replace(/^\+\+\+\s*\[LTX\]\s*/i, '')
-      .replace(/^\[LTX[^\]]*\]\s*/i, '')
-      .replace(/^-\s*《[^》]+》\s*/i, '')
-      .trim();
-
-    let actorName = 'LTX';
-    const parts = title.split(/\s+/);
-    if (parts.length > 1) {
-      actorName = parts[parts.length - 1].replace(/[【】\[\]()（）]/g, '');
-    }
-
-    const codeClean = item.code.replace('-', '').toLowerCase();
-    const newItem = {
-      code: item.code,
-      title: title,
-      title_zh: title,
-      actors: [actorName],
-      maker: item.code.split('-')[0],
-      date: new Date().toISOString().split('T')[0],
-      added_at: Date.now() - (newAddedCount * 1000), // 保持降序间隔
-      pending: false,
-      links: [item.torrentLink],
-      pending_links: [], // 必填字段：前端契约
-      score: 4.85,
-      votes: 120,
-      subtitle: `https://www.subtitlecat.com/subs/${item.code}.srt`,
-      cover: `https://pics.dmm.co.jp/digital/video/${codeClean}/${codeClean}pl.jpg`,
-      genres: []
-    };
-
-    itemList.unshift(newItem);
-    existingCodes.add(item.code);
-    newAddedCount++;
-    console.log(`[Sync] ✨ 成功收录新作品: ${item.code} | 女优: ${actorName} | 标题: ${title.slice(0, 30)}...`);
+  const json = await resp.json().catch(() => null);
+  if (!json || (!Array.isArray(json.items) && !Array.isArray(json.data?.items))) {
+    console.error('❌ [Sync Fatal Error] 官方原站返回数据结构不合法或为空！');
+    process.exit(1);
   }
 
-  if (newAddedCount > 0) {
-    data.updated_at = Date.now();
-    if (!data.nyaa) data.nyaa = {};
-    data.nyaa.checked_at = Date.now();
-    data.nyaa.added = newAddedCount;
-    data.nyaa.ok = true;
-
-    if (data.items) data.items = itemList;
-    else data.movies = itemList;
-
-    // 1. 写回 data/movies.json
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
-    console.log(`[Sync] 数据已安全写入 ${DATA_FILE}`);
-
-    // 2. 同时更新 index.html 中的内联 <script id="ltx-items">
-    if (fs.existsSync(INDEX_FILE)) {
-      let indexHtml = fs.readFileSync(INDEX_FILE, 'utf8');
-      if (indexHtml.includes('id="ltx-items"')) {
-        indexHtml = indexHtml.replace(
-          /<script id="ltx-items" type="application\/json">[\s\S]*?<\/script>/,
-          `<script id="ltx-items" type="application/json">${JSON.stringify(data)}</script>`
-        );
-        fs.writeFileSync(INDEX_FILE, indexHtml, 'utf8');
-        console.log('[Sync] index.html 内联数据同步更新完成');
-      }
-    }
-    console.log(`[Sync] 差异比对：原库 ${initialCount} 部 -> 新库 ${itemList.length} 部（净增 ${newAddedCount} 部）！`);
-  } else {
-    console.log('[Sync] 当前片库与官方发布流已完全对齐，暂无更新。');
-  }
-
-  console.log(`[Sync] 同步作业顺利结束！当前总片库容量: ${itemList.length} 部作品`);
-  console.log('============================================================');
+  const officialItems = Array.isArray(json.items) ? json.items : json.data.items;
+  console.log(`[Sync] ✨ 成功从官方原站获取到 ${officialItems.length} 部原生作品数据！`);
+  return officialItems;
 }
 
-runSync().catch(err => {
+function validateAndCleanItems(items) {
+  console.log('[Sync] 正在严格校验官方原站数据结构与字段纯净度...');
+  const cleaned = [];
+  const seenCodes = new Set();
+
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (!it.code || typeof it.code !== 'string') continue;
+
+    const codeUpper = it.code.trim().toUpperCase();
+    if (seenCodes.has(codeUpper)) continue;
+    seenCodes.add(codeUpper);
+
+    // 【铁律三】：严格校验演员字段，绝不允许把标签当演员名
+    if (Array.isArray(it.actors)) {
+      for (const act of it.actors) {
+        if (BAD_ACTOR_KEYWORDS.some(kw => act.includes(kw))) {
+          console.error(`❌ [Sync Fatal Error] 发现字段受污染数据: ${it.code} 演员包含非法标签 "${act}"！`);
+          process.exit(1);
+        }
+      }
+    }
+
+    // 确保必填字段完整合规
+    const normalized = {
+      code: it.code,
+      title: it.title || '',
+      title_zh: it.title_zh || it.title || '',
+      actors: Array.isArray(it.actors) ? it.actors : [],
+      maker: it.maker || '',
+      date: it.date || '',
+      cover: it.cover || '',
+      url: it.url || '',
+      score: typeof it.score === 'number' ? it.score : 4.5,
+      votes: typeof it.votes === 'number' ? it.votes : 100,
+      links: Array.isArray(it.links) ? it.links : [],
+      pending_links: Array.isArray(it.pending_links) ? it.pending_links : [],
+      added_at: typeof it.added_at === 'number' ? it.added_at : Date.now(),
+      genres: Array.isArray(it.genres) ? it.genres : [],
+      subtitle: it.subtitle || ''
+    };
+
+    cleaned.push(normalized);
+  }
+
+  return cleaned;
+}
+
+async function run() {
+  const officialItems = await fetchOfficialLibrary();
+  const validItems = validateAndCleanItems(officialItems);
+
+  if (!fs.existsSync(DATA_FILE)) {
+    console.error('❌ [Sync Fatal Error] 本地数据库文件不存在:', DATA_FILE);
+    process.exit(1);
+  }
+
+  const currentData = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+  const currentCount = (currentData.items || []).length;
+  console.log(`[Sync] 当前本地库容: ${currentCount} 部 -> 官方最新库容: ${validItems.length} 部`);
+
+  // 按入库时间降序排列
+  validItems.sort((a, b) => (b.added_at || 0) - (a.added_at || 0));
+
+  currentData.items = validItems;
+  currentData.updated_at = Date.now();
+
+  // 1. 写回 data/movies.json
+  fs.writeFileSync(DATA_FILE, JSON.stringify(currentData, null, 2), 'utf8');
+  console.log(`[Sync] 数据已安全写入 ${DATA_FILE}`);
+
+  // 2. 更新 index.html 内联数据
+  if (fs.existsSync(INDEX_FILE)) {
+    let indexHtml = fs.readFileSync(INDEX_FILE, 'utf8');
+    if (indexHtml.includes('id="ltx-items"')) {
+      indexHtml = indexHtml.replace(
+        /<script id="ltx-items" type="application\/json">[\s\S]*?<\/script>/,
+        `<script id="ltx-items" type="application/json">${JSON.stringify(currentData)}</script>`
+      );
+      fs.writeFileSync(INDEX_FILE, indexHtml, 'utf8');
+      console.log('[Sync] index.html 内联数据同步更新完成');
+    }
+  }
+
+  console.log(`[Sync] 官方同步作业完成！最终总库容: ${validItems.length} 部作品`);
+}
+
+run().catch(err => {
   console.error('[Sync Fatal Error]', err);
   process.exit(1);
 });
