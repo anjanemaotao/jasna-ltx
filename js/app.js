@@ -1,4 +1,4 @@
-// Jasna-LTX 核心前端引擎
+// Jasna-LTX 核心前端引擎 (完整支持原站 api/items 格式与本地格式)
 (function() {
   'use strict';
 
@@ -63,14 +63,33 @@
 
     try {
       const resp = await fetch('data/movies.json');
-      const data = await resp.json();
+      const rawData = await resp.json();
       
-      state.allMovies = data.movies || [];
-      if (data.metadata) {
-        if (data.metadata.last_added) {
-          const dateStr = data.metadata.last_added.replace(/\//g, '-');
-          dom.updateTimeText.textContent = `资源更新于 ${data.metadata.last_added.substring(5, 16)}`;
-          dom.updateIndicator.title = `最后一次新增资源：${data.metadata.last_added}\n上次自动检查 nyaa：${data.metadata.last_checked_nyaa || '未知'}`;
+      // 兼容原站 api/items 结构与自定义 movies 结构
+      let rawList = [];
+      if (Array.isArray(rawData)) {
+        rawList = rawData;
+      } else if (rawData.items && Array.isArray(rawData.items)) {
+        rawList = rawData.items;
+      } else if (rawData.movies && Array.isArray(rawData.movies)) {
+        rawList = rawData.movies;
+      }
+
+      // 标准化数据模型
+      state.allMovies = rawList.map(item => normalizeMovie(item));
+
+      // 更新时间戳
+      if (rawData.updated_at) {
+        const d = new Date(typeof rawData.updated_at === 'number' ? rawData.updated_at : rawData.updated_at);
+        const dateStr = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        dom.updateTimeText.textContent = `资源更新于 ${dateStr}`;
+        if (rawData.nyaa) {
+          dom.updateIndicator.title = `最后更新时间：${d.toLocaleString()}\n上次自动检查 nyaa：${rawData.nyaa.checked_at ? new Date(rawData.nyaa.checked_at).toLocaleString() : '未知'}`;
+        }
+      } else if (rawData.metadata) {
+        if (rawData.metadata.last_added) {
+          dom.updateTimeText.textContent = `资源更新于 ${rawData.metadata.last_added.substring(5, 16)}`;
+          dom.updateIndicator.title = `最后一次新增资源：${rawData.metadata.last_added}\n上次自动检查 nyaa：${rawData.metadata.last_checked_nyaa || '未知'}`;
         }
       }
       
@@ -80,6 +99,49 @@
       console.error('加载本地数据库失败:', err);
       showToast('加载数据库失败，请刷新重试');
     }
+  }
+
+  // 统一数据格式转换
+  function normalizeMovie(m) {
+    const rawLinks = m.links || (m.download ? [m.download.link] : []);
+    const firstLink = rawLinks[0] || '';
+    const isEd2k = firstLink.startsWith('ed2k://');
+    const isMagnet = firstLink.startsWith('magnet:?');
+
+    // 解析体积
+    let size = m.download?.size || '未知';
+    if (size === '未知' && isEd2k) {
+      const parts = firstLink.split('|');
+      if (parts[3]) {
+        const bytes = parseInt(parts[3], 10);
+        if (!isNaN(bytes)) {
+          size = (bytes / (1024 * 1024 * 1024)).toFixed(1) + 'G';
+        }
+      }
+    }
+
+    return {
+      code: m.code || '',
+      title: m.title || '',
+      title_zh: m.title_zh || m.title || '',
+      actresses: m.actors || m.actresses || [],
+      maker: m.maker || '',
+      date: m.date || '',
+      added: m.added_at ? new Date(m.added_at).toISOString() : (m.added || ''),
+      confirmed: m.pending !== undefined ? !m.pending : (m.confirmed !== false),
+      score: m.score || 0,
+      javdb_score: m.score || m.javdb_score || 0,
+      javdb_votes: m.votes || m.javdb_votes || 0,
+      cover_url: m.cover || m.cover_url || '',
+      subtitle_url: m.subtitle || m.subtitle_url || '',
+      shot: m.shot || '',
+      links: rawLinks,
+      download: {
+        type: isEd2k ? 'ed2k' : (isMagnet ? 'magnet' : 'http'),
+        size: size,
+        link: firstLink
+      }
+    };
   }
 
   // 绑定交互事件
@@ -178,7 +240,7 @@
       list = list.filter(m => (m.actresses || []).includes(state.selectedActor));
     }
 
-    // 4. 全局搜索（支持番号、女优、片商、日文/中文标题）
+    // 4. 全局搜索
     if (state.searchQuery) {
       const q = state.searchQuery;
       list = list.filter(m => {
@@ -211,7 +273,6 @@
     state.filteredMovies = list;
     state.currentPage = 1;
 
-    // 更新各计数徽章
     updateCounters();
     renderSidebar();
     renderCards(true);
@@ -276,7 +337,7 @@
     });
   }
 
-  // 渲染作品卡片流（支持增量加载）
+  // 渲染作品卡片流
   function renderCards(reset = false) {
     if (reset) {
       dom.cardsContainer.innerHTML = '';
@@ -340,7 +401,6 @@
         </div>
       `;
 
-      // 绑定卡片内事件
       card.querySelector('.code-pill').addEventListener('click', (e) => {
         e.stopPropagation();
         copyToClipboard(movie.code, `已复制番号 ${movie.code}`);
@@ -356,7 +416,6 @@
         e.stopPropagation();
         let link = dl.link;
         if (state.settings.trimFilename && dl.type === 'ed2k') {
-          // 精简 ed2k 文件名为简洁番号
           link = link.replace(/\|file\|[^|]+\|/, `|file|${movie.code}.mp4|`);
         }
         copyToClipboard(link, `已复制 ${movie.code} 下载链接`);
@@ -367,7 +426,6 @@
         sendToDownloader(movie);
       });
 
-      // 女优标签点击联动
       card.querySelector('.actor-tag').addEventListener('click', (e) => {
         e.stopPropagation();
         state.selectedActor = actress;
@@ -380,7 +438,7 @@
     dom.cardsContainer.appendChild(frag);
   }
 
-  // 无限滚动 IntersectionObserver
+  // 无限滚动
   function initObserver() {
     const observer = new IntersectionObserver((entries) => {
       if (entries[0].isIntersecting) {
@@ -395,7 +453,7 @@
     observer.observe(dom.sentinel);
   }
 
-  // 剪贴板工具
+  // 剪贴板
   function copyToClipboard(text, message = '已复制到剪贴板') {
     if (navigator.clipboard && window.isSecureContext) {
       navigator.clipboard.writeText(text).then(() => showToast(message));
@@ -412,7 +470,6 @@
     }
   }
 
-  // Toast 消息
   let toastTimer = null;
   function showToast(msg) {
     clearTimeout(toastTimer);
@@ -423,7 +480,6 @@
     }, 2200);
   }
 
-  // 想看切换
   function toggleWant(code) {
     if (state.wantList.has(code)) {
       state.wantList.delete(code);
@@ -443,7 +499,6 @@
     dom.wantCount.textContent = state.wantList.size;
   }
 
-  // 批量操作弹窗
   function openBatchModal() {
     dom.batchModalCount.textContent = state.filteredMovies.length;
     let totalGB = 0;
@@ -461,7 +516,6 @@
     dom.modalBatch.classList.add('open');
   }
 
-  // 下载器集成推送 (Aria2 JSON-RPC)
   async function sendToDownloader(movie) {
     const link = movie.download?.link;
     if (!link) {
@@ -517,7 +571,6 @@
     }
   }
 
-  // 设置面板加载与保存
   function loadSettingsIntoUI() {
     document.getElementById('setting-trim-filename').checked = state.settings.trimFilename;
     document.getElementById('setting-show-zh').checked = state.settings.showZh;
@@ -541,7 +594,6 @@
     applyFilters();
   }
 
-  // 辅助解析体积（GB）
   function parseSize(sizeStr) {
     if (!sizeStr) return 0;
     const match = sizeStr.match(/([\d.]+)\s*([GMK]?)B?/i);
@@ -564,6 +616,5 @@
     }[m]));
   }
 
-  // 启动
   window.addEventListener('DOMContentLoaded', init);
 })();
