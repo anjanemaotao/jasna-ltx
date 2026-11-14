@@ -915,8 +915,8 @@
       0
     ],
     "IPX-697": [
-      2,
-      2,
+      3,
+      3,
       0
     ],
     "IPX-726": [
@@ -2248,6 +2248,65 @@
     ]
   },
   "items": [
+    {
+      "actors": [
+        "楓カレン"
+      ],
+      "added_at": 1794665077389,
+      "code": "IPZZ-240",
+      "cover": "https://pics.dmm.co.jp/digital/video/ipzz00240/ipzz00240pl.jpg",
+      "date": "2024-02-09",
+      "director": "",
+      "genres": [],
+      "links": [
+        "ed2k://|file|www.98T.la@IPZZ-240-LTX_wm.mp4|9488312402|DEEE8ADA9F6B1A83040241DDCE755575|/"
+      ],
+      "maker": "アイデアポケット",
+      "missing": false,
+      "pending": false,
+      "pending_links": [],
+      "score": null,
+      "shot": "https://cf.javfree.me/HLIC/IPZZ-240-demosaic.jpeg",
+      "subtitle": "https://www.subtitlecat.com/subs/672/IPZZ-240-ZH-Ronald8-zh-CN.srt",
+      "title": "大嫌いなセクハラ上司のデカマラがドストライク過ぎて… 飲まされ酔わされ目覚めたらまさかの相部屋ラブホテル…朝までイカされ続けた私 楓カレン",
+      "title_zh": "",
+      "url": "https://www.javbus.com/IPZZ-240",
+      "votes": 0,
+      "waiting": false
+    },
+    {
+      "actors": [
+        "鈴木心春"
+      ],
+      "added_at": 1794665200073,
+      "code": "SSNI-226",
+      "cover": "https://c0.jdbstatic.com/covers/r3/r3wVA.jpg",
+      "date": "2018-06-07",
+      "director": "キョウセイ",
+      "genres": [
+        "c7=28",
+        "c1=2",
+        "c4=17",
+        "c2=48",
+        "c7=83",
+        "c7=238"
+      ],
+      "links": [
+        "ed2k://|file|www.98T.la@ssni-226_restored_wm.mp4|7128642507|2B75E54DD44A9136A6FF4CCE61CF4D35|/"
+      ],
+      "maker": "S1 NO.1 STYLE",
+      "missing": false,
+      "pending": false,
+      "pending_links": [],
+      "score": 4.31,
+      "shot": "https://cf.javfree.me/HLIC/SSNI-226-demosaic.jpeg",
+      "subtitle": "https://www.subtitlecat.com/subs/226/SSNI-226-zh-CN.srt",
+      "title": "文学女子に食べられる 鈴木心春 DMM.同人でメガヒットDL数を記録したオリジナルコミックを実写化！！",
+      "title_zh": "原作改編 文學少女來吃我 鈴木心春",
+      "url": "https://javdb.com/v/r3wVA",
+      "votes": 449,
+      "waiting": false
+    },
     {
       "actors": [
         "黒木麻衣"
@@ -109248,5 +109307,5 @@
     "checked_at": 1794643208248,
     "ok": true
   },
-  "updated_at": 1794661979841
+  "updated_at": "2026-11-14T14:33:22.837Z"
 }
