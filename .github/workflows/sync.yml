@@ -1,0 +1,32 @@
+name: Auto Sync LTX Releases
+
+on:
+  schedule:
+    # 每天每 6 小时自动执行一次检查 (UTC 时间 0:00, 6:00, 12:00, 18:00)
+    - cron: '0 */6 * * *'
+  workflow_dispatch: # 支持在 GitHub 页面上手动点击一键立即执行
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run Sync Engine
+        run: node scripts/sync.js
+
+      - name: Commit & Push Changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add data/movies.json
+          git diff --quiet && git diff --staged --quiet || (git commit -m "chore(sync): 自动同步最新 LTX 资源 [skip ci]" && git push)
