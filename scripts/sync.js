@@ -3,7 +3,8 @@
  * 功能：
  * 1. 定时巡检 Nyaa 上的 LTX 资源更新
  * 2. 提取番号并去重合并进 data.items (3,194+ 部作品)
- * 3. 自动更新 data/movies.json 及 index.html 内联数据
+ * 3. 严格字段契约：确保 pending_links, links, genres 均为数组，防止前端 TypeError 崩溃
+ * 4. 自动更新 data/movies.json 及 index.html 内联数据
  */
 
 const fs = require('fs');
@@ -85,9 +86,10 @@ async function runSync() {
       date: new Date().toISOString().split('T')[0],
       added_at: Date.now(),
       pending: false,
+      links: [item.torrentLink],
+      pending_links: [], // 必填字段：防止前端 TypeError
       score: 4.80,
       votes: 100,
-      links: [item.torrentLink],
       subtitle: `https://www.subtitlecat.com/subs/${item.code}.srt`,
       cover: `https://pics.dmm.co.jp/digital/video/${codeClean}/${codeClean}pl.jpg`,
       genres: []

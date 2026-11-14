@@ -18,7 +18,8 @@
       ],
       "subtitle": "https://www.subtitlecat.com/subs/LTXS-010.srt",
       "cover": "https://pics.dmm.co.jp/digital/video/ltxs010/ltxs010pl.jpg",
-      "genres": []
+      "genres": [],
+      "pending_links": []
     },
     {
       "code": "1KRMV-279",
@@ -104857,10 +104858,10 @@
       "subtitle": ""
     }
   ],
-  "updated_at": 1794626714961,
+  "updated_at": 1794629381190,
   "nyaa": {
-    "checked_at": 1794626714961,
-    "added": 1,
+    "checked_at": 1794629381190,
+    "added": 0,
     "ok": true
   },
   "avatars": {
