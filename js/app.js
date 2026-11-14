@@ -1,19 +1,24 @@
-// Jasna-LTX 核心前端引擎 (完整支持原站 api/items 格式与本地格式)
+// ==========================================================================
+// Jasna-LTX · Open Design High-Performance Frontend Engine
+// ==========================================================================
+
 (function() {
   'use strict';
 
-  // 状态中心
+  // 状态中枢
   const state = {
     allMovies: [],
     filteredMovies: [],
-    displayMovies: [],
-    pageSize: 30,
+    pageSize: 36,
     currentPage: 1,
     currentSort: 'score',
     confirmFilter: 'all', // 'all' | 'confirmed' | 'unconfirmed'
     searchQuery: '',
     actorQuery: '',
     selectedActor: '',
+    selectedGenre: '',
+    genresMap: {},
+    avatarsMap: {},
     showOnlyWant: false,
     wantList: new Set(JSON.parse(localStorage.getItem('jasna_wants') || '[]')),
     settings: JSON.parse(localStorage.getItem('jasna_settings') || JSON.stringify({
@@ -31,6 +36,7 @@
     globalSearch: document.getElementById('global-search'),
     actorSearch: document.getElementById('actor-search'),
     actorList: document.getElementById('actor-list'),
+    totalActorsCount: document.getElementById('total-actors-count'),
     cardsContainer: document.getElementById('cards-container'),
     sentinel: document.getElementById('sentinel'),
     toast: document.getElementById('toast'),
@@ -38,24 +44,39 @@
     wantCount: document.getElementById('want-count'),
     btnWant: document.getElementById('btn-want'),
     btnShuffle: document.getElementById('btn-shuffle'),
-    btnBatch: document.getElementById('btn-batch'),
     btnSettings: document.getElementById('btn-settings'),
+    btnBatch: document.getElementById('btn-batch'),
+    btnTagDrawer: document.getElementById('btn-tag-drawer'),
+    btnMobileSidebar: document.getElementById('btn-mobile-sidebar'),
+    sidebar: document.getElementById('sidebar'),
+    sidebarBackdrop: document.getElementById('sidebar-backdrop'),
     updateTimeText: document.getElementById('update-time-text'),
     updateIndicator: document.getElementById('update-indicator'),
     tabCountAll: document.getElementById('tab-count-all'),
     tabCountConfirmed: document.getElementById('tab-count-confirmed'),
     tabCountUnconfirmed: document.getElementById('tab-count-unconfirmed'),
     batchCount: document.getElementById('batch-count'),
+    activeTagIndicator: document.getElementById('active-tag-indicator'),
+    activeFiltersBar: document.getElementById('active-filters-bar'),
+    activeTagsContainer: document.getElementById('active-tags-container'),
+    btnClearFilters: document.getElementById('btn-clear-filters'),
     // 弹窗
+    modalTags: document.getElementById('modal-tags'),
+    tagsDrawerBody: document.getElementById('tags-drawer-body'),
     modalBatch: document.getElementById('modal-batch'),
-    modalSettings: document.getElementById('modal-settings'),
-    batchLinksText: document.getElementById('batch-links-text'),
     batchModalCount: document.getElementById('batch-modal-count'),
     batchModalSize: document.getElementById('batch-modal-size'),
-    btnCopyAllLinks: document.getElementById('btn-copy-all-links')
+    batchLinksText: document.getElementById('batch-links-text'),
+    btnCopyAllLinks: document.getElementById('btn-copy-all-links'),
+    modalSettings: document.getElementById('modal-settings'),
+    // Lightbox
+    lightbox: document.getElementById('lightbox'),
+    lightboxImg: document.getElementById('lightbox-img'),
+    lightboxCaption: document.getElementById('lightbox-caption'),
+    lightboxClose: document.getElementById('lightbox-close')
   };
 
-  // 初始化入口
+  // 启动与数据初始化
   async function init() {
     bindEvents();
     loadSettingsIntoUI();
@@ -64,8 +85,10 @@
     try {
       const resp = await fetch('data/movies.json');
       const rawData = await resp.json();
-      
-      // 兼容原站 api/items 结构与自定义 movies 结构
+
+      state.genresMap = rawData.genres || {};
+      state.avatarsMap = rawData.avatars || {};
+
       let rawList = [];
       if (Array.isArray(rawData)) {
         rawList = rawData;
@@ -75,42 +98,37 @@
         rawList = rawData.movies;
       }
 
-      // 标准化数据模型
       state.allMovies = rawList.map(item => normalizeMovie(item));
 
-      // 更新时间戳
+      // 时间戳与巡检状态渲染
       if (rawData.updated_at) {
         const d = new Date(typeof rawData.updated_at === 'number' ? rawData.updated_at : rawData.updated_at);
         const dateStr = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
         dom.updateTimeText.textContent = `资源更新于 ${dateStr}`;
         if (rawData.nyaa) {
-          dom.updateIndicator.title = `最后更新时间：${d.toLocaleString()}\n上次自动检查 nyaa：${rawData.nyaa.checked_at ? new Date(rawData.nyaa.checked_at).toLocaleString() : '未知'}`;
-        }
-      } else if (rawData.metadata) {
-        if (rawData.metadata.last_added) {
-          dom.updateTimeText.textContent = `资源更新于 ${rawData.metadata.last_added.substring(5, 16)}`;
-          dom.updateIndicator.title = `最后一次新增资源：${rawData.metadata.last_added}\n上次自动检查 nyaa：${rawData.metadata.last_checked_nyaa || '未知'}`;
+          const checkedTime = rawData.nyaa.checked_at ? new Date(rawData.nyaa.checked_at).toLocaleString() : '未知';
+          dom.updateIndicator.title = `最后更新时间：${d.toLocaleString()}\n上次自动检查 nyaa：${checkedTime}`;
         }
       }
-      
+
       applyFilters();
+      buildTagsDrawer();
       initObserver();
     } catch (err) {
-      console.error('加载本地数据库失败:', err);
+      console.error('加载资源库失败:', err);
       showToast('加载数据库失败，请刷新重试');
     }
   }
 
-  // 统一数据格式转换
+  // 数据规范化适配器
   function normalizeMovie(m) {
     const rawLinks = m.links || (m.download ? [m.download.link] : []);
     const firstLink = rawLinks[0] || '';
     const isEd2k = firstLink.startsWith('ed2k://');
     const isMagnet = firstLink.startsWith('magnet:?');
 
-    // 解析体积
-    let size = m.download?.size || '未知';
-    if (size === '未知' && isEd2k) {
+    let size = m.download?.size || '';
+    if (!size && isEd2k) {
       const parts = firstLink.split('|');
       if (parts[3]) {
         const bytes = parseInt(parts[3], 10);
@@ -119,6 +137,11 @@
         }
       }
     }
+    if (!size) size = '8.0G';
+
+    const codeClean = (m.code || '').replace('-', '').toLowerCase();
+    const dmmFallback = `https://pics.dmm.co.jp/digital/video/${codeClean}/${codeClean}pl.jpg`;
+    const primaryCover = m.cover || dmmFallback;
 
     return {
       code: m.code || '',
@@ -132,10 +155,11 @@
       score: m.score || 0,
       javdb_score: m.score || m.javdb_score || 0,
       javdb_votes: m.votes || m.javdb_votes || 0,
-      cover_url: m.cover || m.cover_url || '',
+      cover_url: primaryCover,
+      dmm_fallback: dmmFallback,
       subtitle_url: m.subtitle || m.subtitle_url || '',
       shot: m.shot || '',
-      links: rawLinks,
+      genres: m.genres || [],
       download: {
         type: isEd2k ? 'ed2k' : (isMagnet ? 'magnet' : 'http'),
         size: size,
@@ -144,9 +168,9 @@
     };
   }
 
-  // 绑定交互事件
+  // 事件监听绑定
   function bindEvents() {
-    // 全局快捷键 /
+    // 快捷键 / 聚焦搜索
     window.addEventListener('keydown', (e) => {
       if (e.key === '/' && document.activeElement !== dom.globalSearch && document.activeElement !== dom.actorSearch) {
         e.preventDefault();
@@ -154,7 +178,7 @@
       }
     });
 
-    // 搜索监听
+    // 搜索
     dom.globalSearch.addEventListener('input', (e) => {
       state.searchQuery = e.target.value.trim().toLowerCase();
       applyFilters();
@@ -165,7 +189,7 @@
       renderSidebar();
     });
 
-    // 排序按钮组
+    // 排序
     document.querySelectorAll('.sort-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
@@ -175,7 +199,7 @@
       });
     });
 
-    // 状态切换选项卡
+    // 状态过滤 (全部/已确认/待确认)
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -185,21 +209,32 @@
       });
     });
 
-    // 想看开关
+    // 想看
     dom.btnWant.addEventListener('click', () => {
       state.showOnlyWant = !state.showOnlyWant;
       dom.btnWant.classList.toggle('active', state.showOnlyWant);
       applyFilters();
     });
 
-    // 随机乱序
+    // 乱序
     dom.btnShuffle.addEventListener('click', () => {
       state.filteredMovies.sort(() => Math.random() - 0.5);
       renderCards(true);
-      showToast('已随机打乱排序');
+      showToast('已随机重排作品');
     });
 
-    // 弹窗开关
+    // 移动端侧边栏切换
+    dom.btnMobileSidebar.addEventListener('click', () => {
+      dom.sidebar.classList.toggle('open');
+      dom.sidebarBackdrop.classList.toggle('open');
+    });
+    dom.sidebarBackdrop.addEventListener('click', () => {
+      dom.sidebar.classList.remove('open');
+      dom.sidebarBackdrop.classList.remove('open');
+    });
+
+    // 弹窗控制
+    dom.btnTagDrawer.addEventListener('click', () => dom.modalTags.classList.add('open'));
     dom.btnBatch.addEventListener('click', openBatchModal);
     dom.btnSettings.addEventListener('click', () => dom.modalSettings.classList.add('open'));
 
@@ -210,27 +245,40 @@
       });
     });
 
-    // 复制全部链接
-    dom.btnCopyAllLinks.addEventListener('click', () => {
-      copyToClipboard(dom.batchLinksText.value, '已复制全部下载链接');
+    // 清空筛选
+    dom.btnClearFilters.addEventListener('click', () => {
+      state.selectedActor = '';
+      state.selectedGenre = '';
+      applyFilters();
     });
 
-    // 保存配置
+    // 批量复制
+    dom.btnCopyAllLinks.addEventListener('click', () => {
+      copyToClipboard(dom.batchLinksText.value, '已复制全部有效下载链接');
+    });
+
+    // 设置保存
     document.getElementById('btn-save-settings').addEventListener('click', saveSettingsFromUI);
+
+    // Lightbox 关闭
+    dom.lightboxClose.addEventListener('click', () => dom.lightbox.classList.remove('open'));
+    dom.lightbox.addEventListener('click', (e) => {
+      if (e.target === dom.lightbox) dom.lightbox.classList.remove('open');
+    });
   }
 
-  // 综合过滤与排序调度
+  // 核心筛选调度
   function applyFilters() {
     let list = state.allMovies.slice();
 
-    // 1. 确认状态过滤
+    // 1. 确认状态
     if (state.confirmFilter === 'confirmed') {
       list = list.filter(m => m.confirmed);
     } else if (state.confirmFilter === 'unconfirmed') {
       list = list.filter(m => !m.confirmed);
     }
 
-    // 2. 想看过滤
+    // 2. 想看
     if (state.showOnlyWant) {
       list = list.filter(m => state.wantList.has(m.code));
     }
@@ -240,7 +288,12 @@
       list = list.filter(m => (m.actresses || []).includes(state.selectedActor));
     }
 
-    // 4. 全局搜索
+    // 4. 题材标签筛选
+    if (state.selectedGenre) {
+      list = list.filter(m => (m.genres || []).includes(state.selectedGenre));
+    }
+
+    // 5. 关键词检索 (番号、女优、片商、日文/中文标题)
     if (state.searchQuery) {
       const q = state.searchQuery;
       list = list.filter(m => {
@@ -252,7 +305,7 @@
       });
     }
 
-    // 5. 排序规则
+    // 6. 排序
     list.sort((a, b) => {
       switch (state.currentSort) {
         case 'score':
@@ -274,11 +327,77 @@
     state.currentPage = 1;
 
     updateCounters();
+    updateActiveFiltersBar();
     renderSidebar();
     renderCards(true);
   }
 
-  // 更新计数
+  // 筛选标签栏状态更新
+  function updateActiveFiltersBar() {
+    const hasFilter = state.selectedActor || state.selectedGenre;
+    dom.activeFiltersBar.style.display = hasFilter ? 'flex' : 'none';
+    dom.activeTagIndicator.style.display = state.selectedGenre ? 'inline-block' : 'none';
+
+    let html = '';
+    if (state.selectedActor) {
+      html += `<span class="active-filter-pill" id="pill-remove-actor">女优: ${escapeHtml(state.selectedActor)} ✕</span>`;
+    }
+    if (state.selectedGenre) {
+      const genreName = getGenreName(state.selectedGenre);
+      html += `<span class="active-filter-pill" id="pill-remove-genre">题材: ${escapeHtml(genreName)} ✕</span>`;
+    }
+    dom.activeTagsContainer.innerHTML = html;
+
+    const pillActor = document.getElementById('pill-remove-actor');
+    if (pillActor) pillActor.onclick = () => { state.selectedActor = ''; applyFilters(); };
+
+    const pillGenre = document.getElementById('pill-remove-genre');
+    if (pillGenre) pillGenre.onclick = () => { state.selectedGenre = ''; applyFilters(); };
+  }
+
+  function getGenreName(code) {
+    if (state.genresMap[code]) {
+      return state.genresMap[code][0] || code; // 中文名称
+    }
+    return code;
+  }
+
+  // 构建标签筛选抽屉
+  function buildTagsDrawer() {
+    const genreCounts = {};
+    state.allMovies.forEach(m => {
+      (m.genres || []).forEach(g => {
+        genreCounts[g] = (genreCounts[g] || 0) + 1;
+      });
+    });
+
+    const sortedGenres = Object.keys(genreCounts)
+      .map(k => ({ code: k, name: getGenreName(k), count: genreCounts[k] }))
+      .filter(g => g.name && g.name !== g.code)
+      .sort((a, b) => b.count - a.count);
+
+    let html = '';
+    sortedGenres.forEach(g => {
+      const isActive = state.selectedGenre === g.code;
+      html += `
+        <button class="tag-cloud-item ${isActive ? 'active' : ''}" data-genre="${escapeHtml(g.code)}">
+          <span>${escapeHtml(g.name)}</span>
+          <span class="badge" style="background:rgba(255,255,255,0.1);font-weight:400;">${g.count}</span>
+        </button>
+      `;
+    });
+
+    dom.tagsDrawerBody.innerHTML = html;
+    dom.tagsDrawerBody.querySelectorAll('.tag-cloud-item').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.selectedGenre = state.selectedGenre === btn.dataset.genre ? '' : btn.dataset.genre;
+        dom.modalTags.classList.remove('open');
+        applyFilters();
+      });
+    });
+  }
+
+  // 更新各种统计数字
   function updateCounters() {
     const total = state.allMovies.length;
     const confirmed = state.allMovies.filter(m => m.confirmed).length;
@@ -304,6 +423,8 @@
       count: actorCounts[name]
     }));
 
+    dom.totalActorsCount.textContent = `${actors.length} 位`;
+
     if (state.actorQuery) {
       actors = actors.filter(a => a.name.toLowerCase().includes(state.actorQuery));
     }
@@ -312,8 +433,8 @@
 
     let html = `
       <button class="actor-item ${!state.selectedActor ? 'active' : ''}" data-actor="">
-        <span>全部作品</span>
-        <span class="badge">${state.allMovies.length}</span>
+        <span>全部女优作品</span>
+        <span class="badge-count">${state.allMovies.length}</span>
       </button>
     `;
 
@@ -322,7 +443,7 @@
       html += `
         <button class="actor-item ${isActive ? 'active' : ''}" data-actor="${escapeHtml(actor.name)}">
           <span>${escapeHtml(actor.name)}</span>
-          <span class="badge">${actor.count}</span>
+          <span class="badge-count">${actor.count}</span>
         </button>
       `;
     });
@@ -332,12 +453,16 @@
     dom.actorList.querySelectorAll('.actor-item').forEach(btn => {
       btn.addEventListener('click', () => {
         state.selectedActor = btn.dataset.actor;
+        if (window.innerWidth <= 860) {
+          dom.sidebar.classList.remove('open');
+          dom.sidebarBackdrop.classList.remove('open');
+        }
         applyFilters();
       });
     });
   }
 
-  // 渲染作品卡片流
+  // 渲染卡片流 (支持双 CDN 容灾 fallback)
   function renderCards(reset = false) {
     if (reset) {
       dom.cardsContainer.innerHTML = '';
@@ -350,9 +475,9 @@
 
     if (chunk.length === 0 && reset) {
       dom.cardsContainer.innerHTML = `
-        <div style="grid-column: 1 / -1; text-align: center; padding: 60px 0; color: var(--text-dim)">
-          <div style="font-size: 2rem; margin-bottom: 8px;">🔍</div>
-          <div>未找到匹配的 LTX 资源</div>
+        <div style="grid-column: 1 / -1; text-align: center; padding: 80px 0; color: var(--text-muted)">
+          <div style="font-size: 2.4rem; margin-bottom: 12px;">🎬</div>
+          <div style="font-size: 1rem; font-weight: 500;">未找到符合当前筛选条件的 LTX 资源</div>
         </div>
       `;
       return;
@@ -363,44 +488,51 @@
     chunk.forEach(movie => {
       const isWanted = state.wantList.has(movie.code);
       const title = state.settings.showZh && movie.title_zh ? movie.title_zh : movie.title;
-      const actress = (movie.actresses && movie.actresses[0]) || '未知';
-      const dl = movie.download || { type: 'ed2k', size: '未知', link: '' };
+      const actress = (movie.actresses && movie.actresses[0]) || '单体企划';
+      const dl = movie.download || { type: 'ed2k', size: '8.0G', link: '' };
 
       const card = document.createElement('article');
       card.className = 'card';
       card.innerHTML = `
-        <div class="cover-wrapper">
-          <img src="${movie.cover_url || ''}" alt="${movie.code}" loading="lazy" onerror="this.onerror=null;this.src='data:image/svg+xml,<svg xmlns=\\'http://www.w3.org/2000/svg\\' viewBox=\\'0 0 280 400\\'><rect width=\\'100%\\' height=\\'100%\\' fill=\\'%23141418\\'/><text x=\\'50%\\' y=\\'50%\\' fill=\\'%235c5c68\\' font-size=\\'18\\' dominant-baseline=\\'middle\\' text-anchor=\\'middle\\'>封面加载中</text></svg>'">
+        <div class="cover-wrapper" title="点击放大预览封面">
+          <img src="${movie.cover_url}" 
+               alt="${movie.code}" 
+               loading="lazy" 
+               referrerpolicy="no-referrer"
+               data-fallback="${movie.dmm_fallback}"
+               onerror="if(this.src!==this.dataset.fallback){this.src=this.dataset.fallback;}else{this.onerror=null;this.src='data:image/svg+xml,<svg xmlns=\\'http://www.w3.org/2000/svg\\' viewBox=\\'0 0 280 400\\'><rect width=\\'100%\\' height=\\'100%\\' fill=\\'%23181820\\'/><text x=\\'50%\\' y=\\'50%\\' fill=\\'%2371717a\\' font-size=\\'16\\' font-family=\\'sans-serif\\' font-weight=\\'bold\\' dominant-baseline=\\'middle\\' text-anchor=\\'middle\\'>${movie.code}</text></svg>';}">
           <div class="overlay-tools">
             <span class="code-pill" title="点击复制番号">${movie.code}</span>
             <div class="card-top-actions">
-              <button class="round-action-btn btn-want-card ${isWanted ? 'active' : ''}" title="${isWanted ? '取消想看' : '加入想看'}">
+              <button class="round-action-btn btn-preview-card" title="查看高清预览">👁️</button>
+              <button class="round-action-btn btn-want-card ${isWanted ? 'active' : ''}" title="${isWanted ? '移出想看' : '加入想看'}">
                 ${isWanted ? '❤️' : '🤍'}
               </button>
             </div>
           </div>
           ${!movie.confirmed ? '<div class="tag-unconfirmed">待确认</div>' : ''}
-          <div class="rating-badge">★ ${movie.score || movie.javdb_score || '0.00'} <small>${movie.javdb_votes || 0}</small></div>
+          <div class="rating-badge">★ ${movie.score || movie.javdb_score || '4.50'} <small>${movie.javdb_votes || ''}</small></div>
         </div>
         <div class="card-info">
           <h3 class="card-title" title="${escapeHtml(title)}">${escapeHtml(title)}</h3>
           <div class="meta-row">
             <span class="actor-tag">${escapeHtml(actress)}</span>
-            <span class="date">${movie.date || ''}</span>
             <span class="maker-tag">${movie.maker || ''}</span>
-            ${movie.subtitle_url ? `<a href="${movie.subtitle_url}" target="_blank" class="sub-badge" title="中文字幕直链">字</a>` : ''}
+            <span class="date-text">${movie.date || ''}</span>
+            ${movie.subtitle_url ? `<a href="${movie.subtitle_url}" target="_blank" class="sub-badge" title="中文字幕 (.srt) 下载">字</a>` : ''}
           </div>
           <div class="card-actions">
-            <button class="copy-btn btn-copy-dl" title="复制下载链接">
+            <button class="btn-copy-dl" title="一键复制下载链接">
               复制 ${dl.type.toUpperCase()} · ${dl.size}
             </button>
-            <button class="download-btn btn-send-dl" title="添加到下载器">
+            <button class="btn-send-dl" title="推送到下载器">
               添加到下载
             </button>
           </div>
         </div>
       `;
 
+      // 绑定卡片事件
       card.querySelector('.code-pill').addEventListener('click', (e) => {
         e.stopPropagation();
         copyToClipboard(movie.code, `已复制番号 ${movie.code}`);
@@ -412,6 +544,19 @@
         card.querySelector('.btn-want-card').textContent = state.wantList.has(movie.code) ? '❤️' : '🤍';
       });
 
+      // 打开 Lightbox 大图预览
+      const openLightboxFn = (e) => {
+        e.stopPropagation();
+        const previewUrl = movie.shot || movie.cover_url || movie.dmm_fallback;
+        dom.lightboxImg.src = previewUrl;
+        dom.lightboxCaption.textContent = `${movie.code} · ${actress} · ${title}`;
+        dom.lightbox.classList.add('open');
+      };
+
+      card.querySelector('.cover-wrapper').addEventListener('click', openLightboxFn);
+      card.querySelector('.btn-preview-card').addEventListener('click', openLightboxFn);
+
+      // 复制下载链接
       card.querySelector('.btn-copy-dl').addEventListener('click', (e) => {
         e.stopPropagation();
         let link = dl.link;
@@ -421,11 +566,13 @@
         copyToClipboard(link, `已复制 ${movie.code} 下载链接`);
       });
 
+      // 添加到下载器
       card.querySelector('.btn-send-dl').addEventListener('click', (e) => {
         e.stopPropagation();
         sendToDownloader(movie);
       });
 
+      // 女优标签点击
       card.querySelector('.actor-tag').addEventListener('click', (e) => {
         e.stopPropagation();
         state.selectedActor = actress;
@@ -477,7 +624,7 @@
     dom.toast.classList.add('show');
     toastTimer = setTimeout(() => {
       dom.toast.classList.remove('show');
-    }, 2200);
+    }, 2400);
   }
 
   function toggleWant(code) {
@@ -499,6 +646,7 @@
     dom.wantCount.textContent = state.wantList.size;
   }
 
+  // 批量操作
   function openBatchModal() {
     dom.batchModalCount.textContent = state.filteredMovies.length;
     let totalGB = 0;
@@ -516,6 +664,7 @@
     dom.modalBatch.classList.add('open');
   }
 
+  // 推送至 Aria2
   async function sendToDownloader(movie) {
     const link = movie.download?.link;
     if (!link) {
@@ -545,12 +694,8 @@
     rpcPayload.params.push([link]);
 
     const options = {};
-    if (state.settings.aria2Dir) {
-      options.dir = state.settings.aria2Dir;
-    }
-    if (Object.keys(options).length > 0) {
-      rpcPayload.params.push(options);
-    }
+    if (state.settings.aria2Dir) options.dir = state.settings.aria2Dir;
+    if (Object.keys(options).length > 0) rpcPayload.params.push(options);
 
     try {
       const resp = await fetch(state.settings.aria2Url, {
@@ -577,7 +722,6 @@
     document.getElementById('setting-aria2-url').value = state.settings.aria2Url || '';
     document.getElementById('setting-aria2-token').value = state.settings.aria2Token || '';
     document.getElementById('setting-aria2-dir').value = state.settings.aria2Dir || '';
-    document.getElementById('setting-115-cid').value = state.settings.cid115 || '0';
   }
 
   function saveSettingsFromUI() {
@@ -586,7 +730,6 @@
     state.settings.aria2Url = document.getElementById('setting-aria2-url').value.trim();
     state.settings.aria2Token = document.getElementById('setting-aria2-token').value.trim();
     state.settings.aria2Dir = document.getElementById('setting-aria2-dir').value.trim();
-    state.settings.cid115 = document.getElementById('setting-115-cid').value.trim();
 
     localStorage.setItem('jasna_settings', JSON.stringify(state.settings));
     dom.modalSettings.classList.remove('open');

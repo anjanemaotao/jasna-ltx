@@ -2,145 +2,193 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Jasna-LTX 资源库</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23e83e8c'/><text y='70' x='18' font-size='65' fill='white' font-family='sans-serif' font-weight='bold'>J</text></svg>">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <!-- P0 核心修复：防盗链规避，允许跨域加载 JavDB / DMM 封面 -->
+  <meta name="referrer" content="no-referrer">
+  <title>Jasna-LTX 资源库 · 高清压制电影索引</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%23f43f5e'/><text y='70' x='18' font-size='65' fill='white' font-family='-apple-system, sans-serif' font-weight='900'>J</text></svg>">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <!-- 顶部导航条 -->
+  <!-- 顶部主导航 (Open Design Elevated Topbar) -->
   <header class="banner">
     <div class="brand-group">
-      <a href="/" class="brand-logo">Jasna-LTX</a>
+      <button class="mobile-menu-btn" id="btn-mobile-sidebar" title="展开/收起女优列表">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+      </button>
+      <a href="/" class="brand-logo">
+        <span class="logo-accent">Jasna</span><span class="logo-sub">-LTX</span>
+      </a>
       <div class="search-box">
         <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="11" cy="11" r="8"></circle>
           <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
         </svg>
-        <input type="text" id="global-search" placeholder="搜索番号、女优、片商 (/)">
+        <input type="text" id="global-search" placeholder="全局检索番号、女优、片商... (/)" autocomplete="off">
+        <span class="search-shortcut">/</span>
       </div>
     </div>
 
     <div class="nav-controls">
       <div class="sort-group">
-        <button class="sort-btn active" data-sort="score">★ 按评分</button>
-        <button class="sort-btn" data-sort="date">📅 按日期</button>
-        <button class="sort-btn" data-sort="added">🕒 按入库</button>
-        <button class="sort-btn" data-sort="size">💾 按大小</button>
-        <button class="sort-btn" data-sort="code"># 按番号</button>
+        <button class="sort-btn active" data-sort="score">★ 综合评分</button>
+        <button class="sort-btn" data-sort="date">📅 发行日期</button>
+        <button class="sort-btn" data-sort="added">🕒 入库时间</button>
+        <button class="sort-btn" data-sort="size">💾 文件体积</button>
+        <button class="sort-btn" data-sort="code"># 番号</button>
       </div>
 
-      <button class="icon-btn" id="btn-shuffle" title="随机排列">🎲 随机</button>
-      <button class="icon-btn" id="btn-want" title="仅查看想看">❤️ 想看 <span id="want-count" class="badge">0</span></button>
-      <button class="icon-btn" id="btn-submit">➕ 提交资源</button>
-      <button class="icon-btn" id="btn-settings">⚙️ 设置</button>
+      <div class="action-btn-group">
+        <button class="icon-btn" id="btn-shuffle" title="随机排列">🎲 乱序</button>
+        <button class="icon-btn" id="btn-want" title="仅查看想看收藏">❤️ 想看 <span id="want-count" class="badge">0</span></button>
+        <button class="icon-btn" id="btn-settings" title="偏好与下载器设置">⚙️ 设置</button>
+      </div>
     </div>
   </header>
 
-  <!-- 工作区 -->
+  <!-- 工作区双栏布局 -->
   <div class="workspace">
-    <!-- 左侧女优侧边栏 -->
-    <aside class="sidebar">
+    <!-- 左侧女优抽屉导航 -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-title">女优索引</div>
+        <div class="sidebar-count" id="total-actors-count">0 位</div>
+      </div>
       <div class="sidebar-search">
-        <input type="text" id="actor-search" placeholder="筛选女优名字...">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;position:absolute;left:18px;top:50%;transform:translateY(-50%);stroke:#71717a;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="text" id="actor-search" placeholder="筛选女优名字..." style="padding-left: 32px;">
       </div>
       <div class="actor-list" id="actor-list">
-        <!-- 动态生成女优分类 -->
+        <!-- 动态生成女优列表 -->
       </div>
     </aside>
 
-    <!-- 主展示区 -->
+    <!-- 侧边栏遮罩 (移动端) -->
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+    <!-- 主卡片瀑布流区 -->
     <main class="main-content">
       <div class="sub-header">
-        <div class="tabs-group">
-          <button class="tab-btn active" data-filter="all">全部 <span id="tab-count-all">0</span></button>
-          <button class="tab-btn" data-filter="confirmed">已确认 <span id="tab-count-confirmed">0</span></button>
-          <button class="tab-btn" data-filter="unconfirmed">待确认 <span id="tab-count-unconfirmed">0</span></button>
+        <div class="status-tabs">
+          <button class="tab-btn active" data-filter="all">全部 <span id="tab-count-all" class="tab-badge">0</span></button>
+          <button class="tab-btn" data-filter="confirmed">已确认 <span id="tab-count-confirmed" class="tab-badge">0</span></button>
+          <button class="tab-btn" data-filter="unconfirmed">待确认 <span id="tab-count-unconfirmed" class="tab-badge">0</span></button>
         </div>
 
         <div class="bar-end">
-          <button class="icon-btn" id="btn-filter-drawer">🔽 标签筛选</button>
-          <button class="icon-btn" id="btn-batch">📦 批量操作 (<span id="batch-count">0</span>)</button>
-          <span class="updated-tag" id="update-indicator" title="最后一次检查与新增时间">
-            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="23 4 23 10 17 10"></polyline>
-              <polyline points="1 20 1 14 7 14"></polyline>
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-            </svg>
+          <button class="pill-btn" id="btn-tag-drawer">🏷️ 分类标签 <span id="active-tag-indicator" class="active-dot" style="display:none;"></span></button>
+          <button class="pill-btn" id="btn-batch">📦 批量操作 (<span id="batch-count">0</span>)</button>
+          <div class="updated-chip" id="update-indicator" title="资源库自动化检测记录">
+            <span class="pulse-dot"></span>
             <span id="update-time-text">资源更新于 11/14 10:10</span>
-          </span>
+          </div>
         </div>
       </div>
 
-      <!-- 作品卡片流 -->
-      <div class="grid-cards" id="cards-container">
-        <!-- 动态注入作品卡片 -->
+      <!-- 选中筛选标签展示条 -->
+      <div class="active-filters-bar" id="active-filters-bar" style="display: none;">
+        <span class="filter-label">当前筛选:</span>
+        <div class="filter-tags" id="active-tags-container"></div>
+        <button class="clear-filters-btn" id="btn-clear-filters">清空筛选</button>
       </div>
 
-      <!-- 无限滚动哨兵 -->
-      <div id="sentinel" style="height: 40px; margin-top: 20px;"></div>
+      <!-- 作品栅格网格 -->
+      <div class="grid-cards" id="cards-container">
+        <!-- 动态卡片流 -->
+      </div>
+
+      <!-- 触底哨兵 -->
+      <div id="sentinel">
+        <div class="loading-spinner"></div>
+      </div>
     </main>
+  </div>
+
+  <!-- 分类标签筛选抽屉 Modal -->
+  <div class="modal-overlay" id="modal-tags">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <div class="modal-title">🏷️ 分类题材筛选</div>
+        <button class="close-btn" data-close="modal-tags">&times;</button>
+      </div>
+      <div class="tags-drawer-body" id="tags-drawer-body">
+        <!-- 动态按作品数量排布的题材标签 -->
+      </div>
+    </div>
   </div>
 
   <!-- 批量操作弹窗 -->
   <div class="modal-overlay" id="modal-batch">
     <div class="modal-card">
       <div class="modal-header">
-        <div class="modal-title">批量操作</div>
+        <div class="modal-title">📦 批量导出下载链接</div>
         <button class="close-btn" data-close="modal-batch">&times;</button>
       </div>
-      <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-        当前选中 <strong id="batch-modal-count" style="color: var(--color-primary)">0</strong> 部作品 · 共 <strong id="batch-modal-size" style="color: var(--color-primary)">0 GB</strong>
+      <div class="batch-summary">
+        当前筛选出 <strong id="batch-modal-count">0</strong> 部作品 · 累计体积约 <strong id="batch-modal-size">0 GB</strong>
       </div>
       <div class="form-group">
-        <textarea id="batch-links-text" rows="10" readonly placeholder="链接生成中..."></textarea>
+        <textarea id="batch-links-text" rows="11" readonly spellcheck="false" placeholder="链接提取中..."></textarea>
       </div>
-      <div style="display: flex; gap: 10px;">
-        <button class="download-btn" id="btn-copy-all-links" style="flex: 1; padding: 10px;">📋 复制全部链接</button>
-        <button class="copy-btn" id="btn-push-all-download" style="flex: 1; padding: 10px;">🚀 一键推送到下载器</button>
+      <div class="modal-actions">
+        <button class="btn-primary" id="btn-copy-all-links">📋 一键复制全部链接 (迅雷/115)</button>
       </div>
     </div>
   </div>
 
-  <!-- 设置与下载器集成弹窗 -->
+  <!-- 设置与下载集成面板 -->
   <div class="modal-overlay" id="modal-settings">
     <div class="modal-card">
       <div class="modal-header">
-        <div class="modal-title">通用与下载器集成设置</div>
+        <div class="modal-title">⚙️ 系统设置与下载器配置</div>
         <button class="close-btn" data-close="modal-settings">&times;</button>
       </div>
-      <div class="form-group">
-        <label><input type="checkbox" id="setting-trim-filename" checked> 复制时精简 ed2k 文件名（仅保留番号）</label>
+      <div class="settings-section">
+        <div class="section-title">界面偏好</div>
+        <label class="toggle-row">
+          <span>优先展示中文翻译标题</span>
+          <input type="checkbox" id="setting-show-zh" checked>
+        </label>
+        <label class="toggle-row">
+          <span>复制链接时自动精简 ed2k 文件名（仅保留番号）</span>
+          <input type="checkbox" id="setting-trim-filename" checked>
+        </label>
       </div>
-      <div class="form-group">
-        <label><input type="checkbox" id="setting-show-zh" checked> 优先展示中文翻译标题</label>
+
+      <div class="settings-section">
+        <div class="section-title">Aria2 RPC 客户端桥接</div>
+        <div class="form-group">
+          <label>RPC 地址</label>
+          <input type="text" id="setting-aria2-url" placeholder="http://localhost:6800/jsonrpc">
+        </div>
+        <div class="form-group">
+          <label>RPC Token 密钥 (可选)</label>
+          <input type="password" id="setting-aria2-token" placeholder="RPC Secret">
+        </div>
+        <div class="form-group">
+          <label>指定保存目录</label>
+          <input type="text" id="setting-aria2-dir" placeholder="例如 D:/Downloads/LTX">
+        </div>
       </div>
-      <hr style="border: none; border-top: 1px solid var(--border-color); margin: 16px 0;">
-      <div style="font-size: 0.9rem; font-weight: 700; margin-bottom: 10px; color: var(--color-primary);">Aria2 RPC 配置</div>
-      <div class="form-group">
-        <label>RPC 接口地址</label>
-        <input type="text" id="setting-aria2-url" placeholder="http://localhost:6800/jsonrpc">
+
+      <div class="modal-actions">
+        <button class="btn-primary" id="btn-save-settings">💾 保存并生效</button>
       </div>
-      <div class="form-group">
-        <label>RPC Token 密钥</label>
-        <input type="password" id="setting-aria2-token" placeholder="留空则无密钥">
-      </div>
-      <div class="form-group">
-        <label>保存路径</label>
-        <input type="text" id="setting-aria2-dir" placeholder="如 D:/Downloads/LTX">
-      </div>
-      <hr style="border: none; border-top: 1px solid var(--border-color); margin: 16px 0;">
-      <div style="font-size: 0.9rem; font-weight: 700; margin-bottom: 10px; color: var(--color-subtitle);">115 网盘云下载设置</div>
-      <div class="form-group">
-        <label>默认保存目录 CID</label>
-        <input type="text" id="setting-115-cid" placeholder="115 目录唯一 CID，如 0">
-      </div>
-      <button class="download-btn" id="btn-save-settings" style="width: 100%; padding: 10px; margin-top: 10px;">💾 保存配置</button>
     </div>
   </div>
 
-  <!-- Toast 提示条 -->
+  <!-- 大图预览 Lightbox -->
+  <div class="lightbox-overlay" id="lightbox">
+    <button class="lightbox-close" id="lightbox-close">&times;</button>
+    <div class="lightbox-content">
+      <img id="lightbox-img" src="" alt="大图预览">
+      <div class="lightbox-caption" id="lightbox-caption"></div>
+    </div>
+  </div>
+
+  <!-- Toast 悬浮通知 -->
   <div class="toast" id="toast">
+    <div class="toast-indicator"></div>
     <span id="toast-text">已复制到剪贴板</span>
   </div>
 
