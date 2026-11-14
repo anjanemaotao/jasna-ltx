@@ -1,10 +1,16 @@
-name: Auto Sync LTX Releases
+name: Hourly Auto Sync Official LTX
 
 on:
   schedule:
-    # 每天每 6 小时自动执行一次检查 (UTC 时间 0:00, 6:00, 12:00, 18:00)
-    - cron: '0 */6 * * *'
-  workflow_dispatch: # 支持在 GitHub 页面上手动点击一键立即执行
+    # 每小时整点自动执行 (UTC 时间每小时第 0 分)
+    - cron: '0 * * * *'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/sync.yml'
+      - 'scripts/sync_playwright.js'
+  workflow_dispatch: # 支持在 GitHub 页面上一键手动立即运行
 
 permissions:
   contents: write
@@ -21,12 +27,17 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Run Sync Engine
-        run: node scripts/sync.js
+      - name: Install Playwright & Browsers
+        run: |
+          npm ci || npm install
+          npx playwright install chromium --with-deps
+
+      - name: Run Cloud Headless Sync
+        run: node scripts/sync_playwright.js
 
       - name: Commit & Push Changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add data/movies.json index.html
-          git diff --quiet && git diff --staged --quiet || (git commit -m "chore(sync): 自动同步最新 LTX 资源 [skip ci]" && git push)
+          git diff --quiet && git diff --staged --quiet || (git commit -m "chore(sync): 自动同步官方原站最新数据 [skip ci]" && git push)
