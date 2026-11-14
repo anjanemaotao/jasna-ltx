@@ -1,0 +1,44 @@
+name: Wake Cloud Server & Sync
+
+on:
+  schedule:
+    # 每 2 小时自动唤醒一次 (UTC 偶数小时整点)
+    - cron: '0 */2 * * *'
+  workflow_dispatch: # 支持在 GitHub 页面上一键手动点击触发
+
+jobs:
+  wake:
+    name: Wake InstaBox Server
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Wake Signal to Main Machine
+        env:
+          INSTABOX_API_KEY: ${{ secrets.INSTABOX_API_KEY }}
+          MACHINE_ID: "m_agq4idmvorqliytfsmpp6nhtpm"
+        run: |
+          echo "=== 正在向云端主服务器发送开机/唤醒信号 ==="
+          if [ -z "$INSTABOX_API_KEY" ]; then
+            echo "❌ 错误: 未检测到 INSTABOX_API_KEY，请在 GitHub 仓库 Settings -> Secrets and variables -> Actions 中添加该密钥！"
+            exit 1
+          fi
+
+          # 调用官方 API 唤醒主服务器
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST \
+            "https://api.instabox.sh/v1/machines/${MACHINE_ID}/start" \
+            -H "Authorization: Bearer ${INSTABOX_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -H "Idempotency-Key: wake-${{ github.run_id }}-${{ github.run_number }}")
+          
+          HTTP_BODY=$(echo "$RESPONSE" | sed -e '$d')
+          HTTP_STATUS=$(echo "$RESPONSE" | tail -n1 | cut -d':' -f2)
+
+          echo "云平台响应状态码: HTTP ${HTTP_STATUS}"
+          echo "详细返回: ${HTTP_BODY}"
+
+          if [ "$HTTP_STATUS" -eq 200 ] || [ "$HTTP_STATUS" -eq 202 ]; then
+            echo "✨ 云端服务器 main 已成功被唤醒！"
+            echo "系统已自动触发开机自启 systemd 同步服务，数据将自动同步并更新至线上片库。"
+          else
+            echo "⚠️ 唤醒调用异常，请检查机器状态与秘钥配置。"
+            exit 1
+          fi
